@@ -1,0 +1,59 @@
+###########################################################
+#   УСТАНОВКА APACHE и активация своего домена (хоста)    #
+###########################################################
+---
+- hosts: all
+  become: true
+  vars_files:
+    - vars/default.yml
+
+  tasks:
+    - name: Установка пакетов (aptitude -  установщик пакетов)
+      apt: name={{ item }} update_cache=yes state=latest force_apt_get=yes
+      loop: [ 'aptitude' ]
+
+    - name: Устанавливаем Apache сервер
+      apt: name=apache2 update_cache=yes state=latest
+
+    - name: Назначаем владельца на каталог веб-сервера
+      file:
+        path: "/var/www/{{ http_host }}"
+        state: directory
+        owner: "www-data"
+        mode: '0755'
+
+    - name: Копируем индексный пхп файл 
+      template:
+        src: "files/index.html.j2"
+        dest: "/var/www/{{ http_host }}/index.html"
+
+    - name: Копируем файл конфигурации веб-сервера по доменному имени в каталог  Apache virtualhost на ноду
+      template:
+        src: "files/apache.conf.j2"
+        dest: "/etc/apache2/sites-available/{{ http_conf }}"
+
+    - name: Активируем конфиг файл сайта
+      shell: /usr/sbin/a2ensite {{ http_conf }}
+      notify: Reload Apache
+
+    - name: Диактивируем дефолтный файл Апача сайта
+      shell: /usr/sbin/a2dissite 000-default.conf
+      when: disable_default
+      notify: Reload Apache
+
+    - name: "UFW - Allow HTTP on port {{ http_port }}"
+      ufw:
+        rule: allow
+        port: "{{ http_port }}"
+        proto: tcp
+
+  handlers:
+    - name: Перезагружаем  Apache
+      service:
+        name: apache2
+        state: reloaded
+
+    - name: Рестарт Apache
+      service:
+        name: apache2
+        state: restarted

@@ -1,0 +1,91 @@
+############################################################
+# DO Community Playbooks: Установка стека LAMP на Ubuntu   #
+############################################################
+---
+- hosts: all
+  become: true
+#  become_method: su
+  vars_files:
+    - vars/default.yml
+
+  tasks:
+    - name: Устанавливаем пакетник
+      apt: name={{ item }} update_cache=yes state=latest force_apt_get=yes
+      loop: [ 'aptitude' ]
+
+  # Конфигурирование Apache 
+    - name: Установка пакетов стека LAMP
+      apt: name={{ item }} update_cache=yes state=latest force_apt_get=yes
+      loop: [ 'apache2', 'default-mysql-server', 'python3-pymysql', 'php', 'php-mysql', 'libapache2-mod-php' ]
+
+
+    - name: Создаем каталог нового веб-сервера и назначаем на него владельца
+      file:
+        path: "/var/www/{{ http_host }}"
+        state: directory
+        owner: "www-data"
+        mode: '0755'
+
+    - name: Копируем конфиг Apache virtualhost нового сайта
+      template:
+        src: "files/apache.conf.j2"
+        dest: "/etc/apache2/sites-available/{{ http_conf }}"
+      notify: Перезагружаем Apache
+
+    - name: Добавляем запись в /etc/hosts нашего веб-сервера №1
+      shell: "echo '127.0.0.1 {{ http_host }}' >> /etc/hosts"
+
+    - name: Активируем конфиг нового сайта
+      shell: /usr/sbin/a2ensite {{ http_conf }}
+      notify: Перезагружаем Apache
+
+    - name: Отключаем дефолтный конфиг сайта Apache
+      shell: /usr/sbin/a2dissite 000-default.conf
+      when: disable_default
+      notify: Перезагружаем Apache
+
+  # Конфигурирование MySQL 
+#    - name: Задаем пароль root
+#      mysql_user:
+#        name: root
+#        password: "{{ mysql_root_password }}"
+#        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+#    - name: Удаляем все анонимные аккаунты (в целях безопасности)
+#      mysql_user:
+#        name: ''
+#        host_all: yes
+#        state: absent
+#        login_user: root
+#        login_password: "{{ mysql_root_password }}"
+
+#    - name: Удаляем тестовую БД в MySQL - test
+#      mysql_db:
+#        name: test
+#        state: absent
+#        login_user: root
+#        login_password: "{{ mysql_root_password }}"
+
+  # Конфигурирование файрволла  UFW 
+    - name: "UFW - Allow HTTP on port {{ http_port }}"
+      ufw:
+        rule: allow
+        port: "{{ http_port }}"
+        proto: tcp
+
+  # Копируем нашу страницу приветствия на PHP 
+    - name: Копируем индексную страницу 1 веб-сервера index.php
+      template:
+        src: "files/index.php.j2"
+        dest: "/var/www/{{ http_host }}/index.php"
+
+  handlers:
+    - name: Перезагружаем Apache
+      service:
+        name: apache2
+        state: reloaded
+
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted

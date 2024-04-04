@@ -1,0 +1,6 @@
+---
+app_user: "levin"
+http_host: "yakit-student.ru"
+http_conf: "yakit-student.conf"
+http_port: "80"
+disable_default: true
